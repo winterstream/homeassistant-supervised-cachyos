@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly CONFIG_FILE="${HASSIO_CONFIG:-/etc/hassio.json}"
+readonly DOCKER=/usr/bin/docker
+
+supervisor_data=$(jq -er '.data // "/var/lib/homeassistant"' "$CONFIG_FILE")
+supervisor_machine=$(jq -er '.machine' "$CONFIG_FILE")
+supervisor_image=$(jq -er '.supervisor' "$CONFIG_FILE")
+readonly supervisor_data supervisor_machine supervisor_image
+readonly startup_marker=/run/supervisor/startup-marker
+readonly startscript_version="${supervisor_data}/supervisor-version"
+
+mkdir -p "$(dirname "$startup_marker")" "$supervisor_data"
+
+image_id=$($DOCKER image inspect --format '{{.Id}}' "${supervisor_image}:latest" 2>/dev/null || true)
+container_id=$($DOCKER container inspect --format '{{.Image}}' hassio_supervisor 2>/dev/null || true)
+
+if [[ -e "$startup_marker" ]]; then
+  printf '%s\n' '[WARNING] Supervisor left its startup marker; recreating its container and images.' >&2
+  $DOCKER container rm --force hassio_supervisor >/dev/null 2>&1 || true
+  while IFS= read -r old_image; do
+    [[ -n "$old_image" ]] && $DOCKER image rm --force "$old_image" >/dev/null 2>&1 || true
+  done < <($DOCKER image ls --no-trunc --filter "reference=${supervisor_image}" --format '{{.ID}}' | sort -u)
+  image_id=
+  container_id=
+fi
+
+touch "$startup_marker"
+
+if [[ -z "$image_id" ]]; then
+  supervisor_version=$(jq -er '.supervisor // "stable"' "${supervisor_data}/updater.json" 2>/dev/null || printf '%s' stable)
+  if [[ "$supervisor_version" == stable ]]; then
+    supervisor_version=$(curl --fail --silent --show-error --location \
+      https://version.home-assistant.io/stable.json | jq -er '.supervisor')
+  fi
+
+  printf '[INFO] Pulling Supervisor image version %s\n' "$supervisor_version"
+  if ! $DOCKER pull "${supervisor_image}:${supervisor_version}"; then
+    printf '%s\n' '[ERROR] Supervisor image download failed.' >&2
+    rm -f "${supervisor_data}/updater.json"
+    exit 1
+  fi
+  $DOCKER tag "${supervisor_image}:${supervisor_version}" "${supervisor_image}:latest"
+  image_id=$($DOCKER image inspect --format '{{.Id}}' "${supervisor_image}:latest")
+fi
+
+if [[ -n "$container_id" ]]; then
+  if [[ "$image_id" != "$container_id" ]]; then
+    printf '%s\n' '[INFO] Supervisor image changed; recreating its container.'
+    $DOCKER container rm --force hassio_supervisor >/dev/null 2>&1 || true
+    container_id=
+  elif [[ ! -e "$startscript_version" || "$startscript_version" -nt "$0" || "$startscript_version" -ot "$0" ]]; then
+    printf '%s\n' '[INFO] Supervisor launcher changed; recreating its container.'
+    $DOCKER container rm --force hassio_supervisor >/dev/null 2>&1 || true
+    container_id=
+  fi
+fi
+
+if [[ -z "$container_id" ]]; then
+  printf '%s\n' '[INFO] Creating the Supervisor container.'
+  $DOCKER container create \
+    --name hassio_supervisor \
+    --privileged \
+    --security-opt apparmor=hassio-supervisor \
+    --volume /run/docker.sock:/run/docker.sock:rw \
+    --volume /run/containerd/containerd.sock:/run/containerd/containerd.sock:rw \
+    --volume /run/systemd-journal-gatewayd.sock:/run/systemd-journal-gatewayd.sock:rw \
+    --volume /run/dbus:/run/dbus:ro \
+    --volume /run/supervisor:/run/os:rw \
+    --volume /run/udev:/run/udev:ro \
+    --volume /etc/machine-id:/etc/machine-id:ro \
+    --volume "${supervisor_data}:/data:rw,slave" \
+    --env SUPERVISOR_SHARE="$supervisor_data" \
+    --env SUPERVISOR_NAME=hassio_supervisor \
+    --env SUPERVISOR_MACHINE="$supervisor_machine" \
+    "${supervisor_image}:latest" >/dev/null
+  touch --reference="$0" "$startscript_version"
+fi
+
+printf '%s\n' '[INFO] Starting the Supervisor.'
+$DOCKER container start hassio_supervisor >/dev/null
+exec $DOCKER container wait hassio_supervisor

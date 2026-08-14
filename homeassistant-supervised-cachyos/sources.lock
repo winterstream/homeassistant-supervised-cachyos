@@ -1,0 +1,12 @@
+# Pinned external inputs used by the CachyOS host integration.
+# Refresh deliberately and review every change before updating.
+
+supervised_installer_version=4.0.1
+supervised_installer_source=https://github.com/home-assistant/supervised-installer/releases/tag/4.0.1
+os_agent_version=1.11.0
+os_agent_archive=os-agent_1.11.0_linux_amd64.tar.gz
+os_agent_archive_sha512=d3befa0cd66e258ceb945c729fa5caed90953c316085f2a54a56b6fc5b234caae91267a53f89d359c2b11b9e5286feb0309a476db700942da378272e46b3896e
+os_agent_source=https://github.com/home-assistant/os-agent/releases/tag/1.11.0
+apparmor_profile_source=https://version.home-assistant.io/apparmor_stable.txt
+apparmor_profile_sha256=3bc606f9ac727270534e6d270bfb107e89fe15a9b0e2c8a6517c54b8d395174d
+supervisor_channel=https://version.home-assistant.io/stable.json

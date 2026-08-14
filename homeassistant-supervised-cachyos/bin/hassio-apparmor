@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly lib_dir=/usr/local/lib/homeassistant-supervised
+readonly bundled_profile="${lib_dir}/apparmor/hassio-supervisor"
+readonly CONFIG_FILE="${HASSIO_CONFIG:-/etc/hassio.json}"
+readonly data_dir="$(jq -er '.data // "/var/lib/homeassistant"' "$CONFIG_FILE")"
+readonly profiles_dir="${data_dir}/apparmor"
+readonly cache_dir="${profiles_dir}/cache"
+
+install -d -m 0755 "$profiles_dir" "$cache_dir"
+if [[ ! -f "$profiles_dir/hassio-supervisor" && -f "$bundled_profile" ]]; then
+  install -m 0644 "$bundled_profile" "$profiles_dir/hassio-supervisor"
+fi
+shopt -s nullglob
+profiles=("${profiles_dir}"/*)
+shopt -u nullglob
+
+loaded=0
+for profile in "${profiles[@]}"; do
+  [[ -f "$profile" ]] || continue
+  loaded=$((loaded + 1))
+  printf '[INFO] Loading AppArmor profile %s\n' "$profile"
+  apparmor_parser -r -W -L "$cache_dir" "$profile"
+done
+
+if (( loaded == 0 )); then
+  printf '[ERROR] No AppArmor profiles were found in %s\n' "$profiles_dir" >&2
+  exit 1
+fi
+
+if ! aa-status 2>/dev/null | awk '$1 == "hassio-supervisor" { found = 1 } END { exit !found }'; then
+  printf '%s\n' '[ERROR] hassio-supervisor is not present in the loaded AppArmor profiles.' >&2
+  exit 1
+fi

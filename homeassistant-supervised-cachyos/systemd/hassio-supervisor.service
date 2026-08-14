@@ -1,0 +1,20 @@
+[Unit]
+Description=Home Assistant Supervisor
+Requires=docker.service dbus.service hassio-apparmor.service
+Wants=network-online.target time-sync.target systemd-journal-gatewayd.socket systemd-resolved.service
+After=docker.service dbus.service hassio-apparmor.service network-online.target time-sync.target systemd-journal-gatewayd.socket systemd-resolved.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+ConditionPathExists=/run/dbus/system_bus_socket
+ConditionPathExists=/run/docker.sock
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5s
+ExecStartPre=-/usr/bin/docker stop hassio_supervisor
+ExecStart=/usr/local/lib/homeassistant-supervised/hassio-supervisor
+ExecStop=-/usr/bin/docker stop hassio_supervisor
+
+[Install]
+WantedBy=multi-user.target

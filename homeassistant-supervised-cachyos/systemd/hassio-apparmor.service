@@ -1,0 +1,13 @@
+[Unit]
+Description=Home Assistant Supervisor AppArmor profile
+Requires=apparmor.service
+After=apparmor.service
+Before=hassio-supervisor.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/homeassistant-supervised/hassio-apparmor
+
+[Install]
+WantedBy=multi-user.target

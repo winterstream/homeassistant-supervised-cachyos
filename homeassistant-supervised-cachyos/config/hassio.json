@@ -1,0 +1,5 @@
+{
+  "supervisor": "ghcr.io/home-assistant/amd64-hassio-supervisor",
+  "machine": "qemux86-64",
+  "data": "/var/lib/homeassistant"
+}

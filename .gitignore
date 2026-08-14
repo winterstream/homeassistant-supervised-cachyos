@@ -1,0 +1,11 @@
+# Local/editor files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Recovery artifacts and runtime state; never commit these.
+*.tar
+*.tar.zst
+*.backup
+*.bak
